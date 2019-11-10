@@ -246,6 +246,9 @@ class UserProfileController extends UserController
         $customProfile = $this->profileHelper->getProfile($user, true);
 
         $schema = new RequestSchemaRepository($cutomsFields);
+
+        $this->profileHelper->permissionCheck(false, $schema, $customProfile, $authorizer, $currentUser, $user);
+
         $form = new Form($schema, $customProfile);
         //<--
 
@@ -517,6 +520,9 @@ class UserProfileController extends UserController
 
         // Get the schema repo, validator and create the form
         $schema = new RequestSchemaRepository($loaderContent);
+
+        $this->profileHelper->permissionCheck(true, $schema, $customProfile, $authorizer, $currentUser, $user);
+
         $validator = new JqueryValidationAdapter($schema, $this->ci->translator);
         $form = new Form($schema, $customProfile);
         //<--
@@ -711,6 +717,9 @@ class UserProfileController extends UserController
 
         // Get the schema repo, validator and create the form
         $schema = new RequestSchemaRepository($loaderContent);
+
+        $this->profileHelper->permissionCheck(true, $schema, $customProfile, $authorizer, $currentUser, $user);
+
         $validatorProfileSettings = new JqueryValidationAdapter($schema, $this->ci->translator);
         $form = new Form($schema, $customProfile);
         //<--

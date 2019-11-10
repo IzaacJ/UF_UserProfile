@@ -11,7 +11,10 @@
 namespace UserFrosting\Sprinkle\UserProfile\Util;
 
 use Interop\Container\ContainerInterface;
+use UserFrosting\Sprinkle\UserProfile\Database\Models\ProfileFields;
+use UserFrosting\Sprinkle\UserProfile\Database\Models\User;
 use UserFrosting\Support\Repository\Loader\YamlFileLoader;
+use UserFrosting\Fortress\RequestSchema\RequestSchemaRepository;
 
 /**
  * CustomProfileHelper Class.
@@ -59,7 +62,7 @@ class UserProfileHelper
         // Map the fields from the list to the values from the db
         return $fields->mapWithKeys(function ($item, $key) use ($userFields, $transform) {
 
-                // Get the default value
+            // Get the default value
             $default = isset($item['form']['default']) ? $item['form']['default'] : '';
 
             // Get the field value.
@@ -71,8 +74,8 @@ class UserProfileHelper
             }
 
             return [
-                    $key => $value,
-                ];
+                $key => $value,
+            ];
         });
 
         //});
@@ -147,13 +150,13 @@ class UserProfileHelper
         $loader = new YamlFileLoader([]);
 
         // Get all the location where we can find config schemas
-        $paths = array_reverse($locator->findResources('schema://'.$schemaLocation, true, false));
+        $paths = array_reverse($locator->findResources('schema://' . $schemaLocation, true, false));
 
         // For every location...
         foreach ($paths as $path) {
 
             // Get a list of all the schemas file
-            $files_with_path = glob($path.'/*.json');
+            $files_with_path = glob($path . '/*.json');
 
             // Load every found files
             foreach ($files_with_path as $file) {
@@ -164,5 +167,59 @@ class UserProfileHelper
         }
 
         return $loader->load();
+    }
+
+    public function permissionCheck($edit, &$schema, &$profile, $authorizer, $currentUser, $user = null)
+    {
+        if ($user === null) $user = $currentUser;
+
+        foreach ($schema->all() as $key => $field) {
+            if (isset($field['permission'])) {
+                if (!$edit) {
+                    $own = isset($field['permission']['view_own']) ? $field['permission']['view_own'] : true;
+                    $perm = isset($field['permission']['view']) ? $field['permission']['view'] : 'view_user_field';
+                } else {
+                    $own = isset($field['permission']['edit_own']) ? $field['permission']['edit_own'] : true;
+                    $perm = isset($field['permission']['edit']) ? $field['permission']['edit'] : 'update_user_field';
+                }
+                $is_own = $currentUser->id === $user->id;
+                if ($profile->has($key)) {
+                    if (
+                        ($is_own && $own) ||
+                        (!$is_own && $authorizer->checkAccess($currentUser, $perm, ['user' => $user]))
+                    ) continue;
+                    $profile->offsetUnset($key);
+                    $schema->offsetUnset($key);
+                }
+            }
+        }
+    }
+
+    public function getProfileFields($user) {
+        /** @var UserFrosting\Sprinkle\Account\Authorize\AuthorizationManager $authorizer */
+        $authorizer = $this->ci->authorizer;
+
+        /** @var UserFrosting\Sprinkle\Account\Database\Models\User $currentUser */
+        $currentUser = $this->ci->currentUser;
+
+        /** @var UserFrosting\Config\Config $config */
+        $config = $this->ci->config;
+
+        //-->
+        // Load the custom fields
+        $customFields = $this->getFieldsSchema();
+        $customProfile = $this->getProfile($user, true);
+
+        $schema = new RequestSchemaRepository($customFields);
+
+        $this->permissionCheck(false, $schema, $customProfile, $authorizer, $currentUser, $user);
+
+        $returnFields = [];
+        foreach($schema->all() as $key => $field) {
+            if($field === null) continue;
+            $returnFields[$key] = ProfileFields::where(['parent_type' => User::class, 'parent_id' => $user->id, 'slug' => $key])->first()->value;
+        }
+
+        return $returnFields;
     }
 }
